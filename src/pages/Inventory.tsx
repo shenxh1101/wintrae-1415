@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { useAppStore } from '../store/useAppStore';
-import type { InventoryItem, InventoryLog, InventoryCategory } from '../../shared/types';
+import type { InventoryItem, InventoryLog, InventoryCategory, Room } from '../../shared/types';
 import {
   Package,
   AlertTriangle,
@@ -33,7 +33,22 @@ function InventoryCard({ item, onRestock, onConsume }: { item: InventoryItem; on
   const config = categoryConfig[item.category];
   const Icon = config.icon;
   const isLow = item.totalQuantity <= item.warningThreshold;
+  const warningPercentage = Math.round((item.totalQuantity / item.warningThreshold) * 100);
   const percentage = Math.min(100, (item.totalQuantity / (item.warningThreshold * 3)) * 100);
+
+  const getStockStatusText = () => {
+    if (isLow) {
+      return `低于预警 ${warningPercentage}%`;
+    }
+    return '库存充足';
+  };
+
+  const getStockStatusClass = () => {
+    if (isLow) {
+      return 'text-red-600 bg-red-50';
+    }
+    return 'text-green-600 bg-green-50';
+  };
 
   return (
     <div
@@ -42,12 +57,12 @@ function InventoryCard({ item, onRestock, onConsume }: { item: InventoryItem; on
         isLow && 'ring-2 ring-red-400 animate-pulse'
       )}
     >
-      {isLow && (
-        <div className="absolute top-3 right-3 flex items-center gap-1 text-red-500">
-          <AlertTriangle className="w-4 h-4" />
-          <span className="text-xs font-medium">库存预警</span>
-        </div>
-      )}
+      <div className="absolute top-3 right-3 flex items-center gap-1">
+        {isLow && <AlertTriangle className="w-4 h-4 text-red-500" />}
+        <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', getStockStatusClass())}>
+          {getStockStatusText()}
+        </span>
+      </div>
 
       <div className="flex items-start gap-3 mb-4">
         <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', config.bg)}>
@@ -107,17 +122,21 @@ function OperationModal({
   rooms,
   onClose,
   onSubmit,
+  errorMessage,
 }: {
   modal: ModalState;
-  rooms: { number: string }[];
+  rooms: Room[];
   onClose: () => void;
   onSubmit: (data: { quantity: number; roomNumber?: string; notes?: string }) => void;
+  errorMessage?: string;
 }) {
   const [quantity, setQuantity] = useState<number>(1);
   const [roomNumber, setRoomNumber] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
 
   const isRestock = modal.type === 'restock';
+  const currentStock = modal.item?.totalQuantity || 0;
+  const isQuantityExceedsStock = !isRestock && quantity > currentStock;
 
   useEffect(() => {
     if (modal.open) {
@@ -131,6 +150,7 @@ function OperationModal({
 
   const handleSubmit = () => {
     if (quantity <= 0) return;
+    if (isQuantityExceedsStock) return;
     const data: { quantity: number; roomNumber?: string; notes?: string } = { quantity };
     if (!isRestock && roomNumber) {
       data.roomNumber = roomNumber;
@@ -140,6 +160,8 @@ function OperationModal({
     }
     onSubmit(data);
   };
+
+  const isSubmitDisabled = (!isRestock && !roomNumber) || isQuantityExceedsStock;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -162,6 +184,12 @@ function OperationModal({
         </div>
 
         <div className="p-6 space-y-4">
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600 font-medium">{errorMessage}</p>
+            </div>
+          )}
+
           <div>
             <label className="label">数量 <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-2">
@@ -176,7 +204,10 @@ function OperationModal({
                 min="1"
                 value={quantity}
                 onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                className="input text-center flex-1"
+                className={cn(
+                  'input text-center flex-1',
+                  isQuantityExceedsStock && 'border-red-400 focus:ring-red-400 focus:border-red-400'
+                )}
               />
               <button
                 onClick={() => setQuantity(quantity + 1)}
@@ -186,6 +217,9 @@ function OperationModal({
               </button>
               <span className="text-sm text-gray-500 w-12">{modal.item.unit}</span>
             </div>
+            {isQuantityExceedsStock && (
+              <p className="text-xs text-red-500 mt-1.5">领用数量不能超过当前库存 {currentStock} {modal.item.unit}</p>
+            )}
           </div>
 
           {!isRestock && (
@@ -199,7 +233,7 @@ function OperationModal({
                 <option value="">请选择房号</option>
                 {rooms.map((room) => (
                   <option key={room.number} value={room.number}>
-                    {room.number}
+                    {room.number} - {room.type}
                   </option>
                 ))}
               </select>
@@ -224,8 +258,11 @@ function OperationModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!isRestock && !roomNumber}
-            className={cn(isRestock ? 'btn-secondary' : 'btn-primary', !isRestock && !roomNumber && 'opacity-50 cursor-not-allowed')}
+            disabled={isSubmitDisabled}
+            className={cn(
+              isRestock ? 'btn-secondary' : 'btn-primary',
+              isSubmitDisabled && 'opacity-50 cursor-not-allowed'
+            )}
           >
             确认{isRestock ? '入库' : '领用'}
           </button>
@@ -304,14 +341,19 @@ export default function Inventory() {
   const restockInventory = useAppStore((s) => s.restockInventory);
   const consumeInventory = useAppStore((s) => s.consumeInventory);
   const rooms = useAppStore((s) => s.rooms);
+  const fetchRooms = useAppStore((s) => s.fetchRooms);
+  const fetchStaff = useAppStore((s) => s.fetchStaff);
 
   const [modal, setModal] = useState<ModalState>({ open: false, type: 'restock', item: null });
   const [activeCategory, setActiveCategory] = useState<InventoryCategory | 'all'>('all');
+  const [modalError, setModalError] = useState<string>('');
 
   useEffect(() => {
     fetchInventory();
     fetchInventoryLogs();
-  }, [fetchInventory, fetchInventoryLogs]);
+    fetchRooms();
+    fetchStaff();
+  }, [fetchInventory, fetchInventoryLogs, fetchRooms, fetchStaff]);
 
   const filteredInventory = useMemo(() => {
     if (activeCategory === 'all') return inventory;
@@ -335,26 +377,34 @@ export default function Inventory() {
   }, [inventory, inventoryLogs]);
 
   const handleRestock = (item: InventoryItem) => {
+    setModalError('');
     setModal({ open: true, type: 'restock', item });
   };
 
   const handleConsume = (item: InventoryItem) => {
+    setModalError('');
     setModal({ open: true, type: 'consume', item });
   };
 
   const handleCloseModal = () => {
+    setModalError('');
     setModal({ open: false, type: 'restock', item: null });
   };
 
   const handleSubmit = async (data: { quantity: number; roomNumber?: string; notes?: string }) => {
     if (!modal.item) return;
-    const operatorName = '管理员';
+    const operatorName = '王芳（前台）';
     if (modal.type === 'restock') {
       await restockInventory(modal.item.id, { quantity: data.quantity, operatorName, notes: data.notes });
+      handleCloseModal();
     } else {
-      await consumeInventory(modal.item.id, { quantity: data.quantity, roomNumber: data.roomNumber, operatorName });
+      const success = await consumeInventory(modal.item.id, { quantity: data.quantity, roomNumber: data.roomNumber, operatorName });
+      if (success) {
+        handleCloseModal();
+      } else {
+        setModalError(`库存不足！当前库存 ${modal.item.totalQuantity} ${modal.item.unit}，无法领用 ${data.quantity} ${modal.item.unit}`);
+      }
     }
-    handleCloseModal();
   };
 
   return (
@@ -467,6 +517,7 @@ export default function Inventory() {
         rooms={rooms}
         onClose={handleCloseModal}
         onSubmit={handleSubmit}
+        errorMessage={modalError}
       />
     </Layout>
   );

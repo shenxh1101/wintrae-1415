@@ -12,6 +12,8 @@ import {
   Camera,
   Plus,
   Zap,
+  CheckSquare,
+  Timer,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -37,6 +39,9 @@ function MaintenanceCard({ order }: { order: MaintenanceOrder }) {
   const completeMaintenanceOrder = useAppStore((s) => s.completeMaintenanceOrder);
   const repairStaff = useAppStore((s) => s.repairStaff);
   const [showAssign, setShowAssign] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completeResult, setCompleteResult] = useState('');
+  const [completeDuration, setCompleteDuration] = useState('');
 
   const handleAssign = async (staffId: string, staffName: string) => {
     await updateMaintenanceOrder(order.id, { assigneeId: staffId, assigneeName: staffName });
@@ -44,11 +49,28 @@ function MaintenanceCard({ order }: { order: MaintenanceOrder }) {
   };
 
   const handleStart = async () => {
-    await updateMaintenanceOrder(order.id, { status: 'inProgress' as MaintenanceStatus });
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    await updateMaintenanceOrder(order.id, { status: 'inProgress' as MaintenanceStatus, startedAt: now });
   };
 
-  const handleComplete = async () => {
-    await completeMaintenanceOrder(order.id, { result: '维修完成' });
+  const handleCompleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!completeResult.trim() || !completeDuration || parseInt(completeDuration) < 1) return;
+
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const updateData: Record<string, unknown> = {
+      result: completeResult.trim(),
+      repairDurationMinutes: parseInt(completeDuration),
+      completedAt: now,
+    };
+    if (!order.startedAt) {
+      updateData.startedAt = now;
+    }
+
+    await completeMaintenanceOrder(order.id, updateData);
+    setShowCompleteModal(false);
+    setCompleteResult('');
+    setCompleteDuration('');
   };
 
   return (
@@ -73,6 +95,13 @@ function MaintenanceCard({ order }: { order: MaintenanceOrder }) {
         <p className="text-xs text-gray-400">{order.createdAt}</p>
       </div>
 
+      <div className="mb-2">
+        <p className="text-xs text-gray-500 flex items-center gap-1">
+          <User className="w-3.5 h-3.5" />
+          报修人：{order.reporterName}
+        </p>
+      </div>
+
       <div className="mb-3">
         <p className="font-serif text-xl font-bold text-gray-900">{order.roomNumber}</p>
         <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
@@ -82,6 +111,28 @@ function MaintenanceCard({ order }: { order: MaintenanceOrder }) {
       </div>
 
       <p className="text-sm text-gray-600 mb-4 line-clamp-2">{order.description}</p>
+
+      {order.status === 'completed' && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
+          <div className="mb-2">
+            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+              <CheckSquare className="w-3.5 h-3.5" />
+              处理结果
+            </p>
+            <p className="text-sm text-gray-700">{order.result}</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <Timer className="w-3.5 h-3.5" />
+              实际耗时：{order.repairDurationMinutes} 分钟
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              完成时间：{order.completedAt}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
         <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -128,12 +179,64 @@ function MaintenanceCard({ order }: { order: MaintenanceOrder }) {
             </>
           )}
           {order.status === 'inProgress' && (
-            <button onClick={handleComplete} className="btn-secondary text-xs px-3 py-1.5">
+            <button onClick={() => setShowCompleteModal(true)} className="btn-secondary text-xs px-3 py-1.5">
               完成
             </button>
           )}
         </div>
       </div>
+
+      {showCompleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              完成工单
+            </h3>
+            <form onSubmit={handleCompleteSubmit} className="space-y-4">
+              <div>
+                <label className="label">处理结果 <span className="text-red-500">*</span></label>
+                <textarea
+                  value={completeResult}
+                  onChange={(e) => setCompleteResult(e.target.value)}
+                  className="input"
+                  rows={4}
+                  placeholder="请详细描述维修处理过程和结果"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">实际耗时（分钟） <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  value={completeDuration}
+                  onChange={(e) => setCompleteDuration(e.target.value)}
+                  className="input"
+                  min={1}
+                  placeholder="请输入实际耗时"
+                  required
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCompleteModal(false);
+                    setCompleteResult('');
+                    setCompleteDuration('');
+                  }}
+                  className="btn-outline"
+                >
+                  取消
+                </button>
+                <button type="submit" className="btn-primary">
+                  确认完成
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -146,6 +249,7 @@ export default function Maintenance() {
   const maintenanceFilterStatus = useAppStore((s) => s.maintenanceFilterStatus);
   const setMaintenanceFilterStatus = useAppStore((s) => s.setMaintenanceFilterStatus);
   const rooms = useAppStore((s) => s.rooms);
+  const staff = useAppStore((s) => s.staff);
   const fetchStaff = useAppStore((s) => s.fetchStaff);
 
   const [showModal, setShowModal] = useState(false);
@@ -153,6 +257,7 @@ export default function Maintenance() {
   const [formLocation, setFormLocation] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formPriority, setFormPriority] = useState<MaintenancePriority>('medium');
+  const [formReporterName, setFormReporterName] = useState('');
 
   useEffect(() => {
     fetchStaff();
@@ -161,6 +266,13 @@ export default function Maintenance() {
   useEffect(() => {
     fetchMaintenanceOrders();
   }, [fetchMaintenanceOrders, maintenanceFilterStatus]);
+
+  useEffect(() => {
+    if (staff.length > 0 && !formReporterName) {
+      const receptionist = staff.find((s) => s.role === 'reception') || staff[0];
+      setFormReporterName(receptionist.name);
+    }
+  }, [staff, formReporterName]);
 
   const stats = useMemo(() => {
     const s: Record<MaintenanceStatus, number> = {
@@ -189,6 +301,7 @@ export default function Maintenance() {
     e.preventDefault();
     const room = rooms.find((r) => r.id === formRoomId);
     if (!room) return;
+    if (!formReporterName) return;
 
     await createMaintenanceOrder({
       roomId: formRoomId,
@@ -196,6 +309,7 @@ export default function Maintenance() {
       location: formLocation,
       description: formDescription,
       priority: formPriority,
+      reporterName: formReporterName,
     });
 
     setShowModal(false);
@@ -203,6 +317,8 @@ export default function Maintenance() {
     setFormLocation('');
     setFormDescription('');
     setFormPriority('medium');
+    const receptionist = staff.find((s) => s.role === 'reception') || staff[0];
+    setFormReporterName(receptionist?.name || '');
   };
 
   return (
@@ -288,7 +404,7 @@ export default function Maintenance() {
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="label">房间</label>
+                <label className="label">房间 <span className="text-red-500">*</span></label>
                 <select
                   value={formRoomId}
                   onChange={(e) => setFormRoomId(e.target.value)}
@@ -304,7 +420,23 @@ export default function Maintenance() {
                 </select>
               </div>
               <div>
-                <label className="label">位置</label>
+                <label className="label">报修人 <span className="text-red-500">*</span></label>
+                <select
+                  value={formReporterName}
+                  onChange={(e) => setFormReporterName(e.target.value)}
+                  className="input"
+                  required
+                >
+                  <option value="">请选择报修人</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name}（{s.role === 'reception' ? '前台' : s.role === 'cleaner' ? '清洁阿姨' : s.role === 'repair' ? '维修' : '管理员'}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">位置 <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={formLocation}
@@ -315,7 +447,7 @@ export default function Maintenance() {
                 />
               </div>
               <div>
-                <label className="label">问题描述</label>
+                <label className="label">问题描述 <span className="text-red-500">*</span></label>
                 <textarea
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
@@ -326,7 +458,7 @@ export default function Maintenance() {
                 />
               </div>
               <div>
-                <label className="label">紧急程度</label>
+                <label className="label">紧急程度 <span className="text-red-500">*</span></label>
                 <div className="grid grid-cols-4 gap-2">
                   {(Object.keys(priorityConfig) as MaintenancePriority[]).map((priority) => {
                     const config = priorityConfig[priority];

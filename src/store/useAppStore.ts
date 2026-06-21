@@ -47,12 +47,15 @@ interface AppState {
 
   updateRoomStatus: (id: string, status: RoomStatus) => Promise<void>;
   createCleaningTask: (data: Record<string, unknown>) => Promise<void>;
+  startCleaningTask: (id: string) => Promise<void>;
+  completeCleaningTask: (id: string, data: Record<string, unknown>) => Promise<void>;
+  reworkCleaningTask: (id: string) => Promise<void>;
   updateCleaningTask: (id: string, data: Record<string, unknown>) => Promise<void>;
   createMaintenanceOrder: (data: Record<string, unknown>) => Promise<void>;
   updateMaintenanceOrder: (id: string, data: Record<string, unknown>) => Promise<void>;
   completeMaintenanceOrder: (id: string, data: Record<string, unknown>) => Promise<void>;
   restockInventory: (id: string, data: Record<string, unknown>) => Promise<void>;
-  consumeInventory: (id: string, data: Record<string, unknown>) => Promise<void>;
+  consumeInventory: (id: string, data: Record<string, unknown>) => Promise<boolean>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -198,6 +201,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().fetchCleaningTasks();
   },
 
+  startCleaningTask: async (id) => {
+    const task = get().cleaningTasks.find((t) => t.id === id);
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    await api.updateCleaningTask(id, {
+      status: 'inProgress',
+      startTime: now,
+    });
+    if (task) {
+      await api.updateRoomStatus(task.roomId, 'cleaning');
+    }
+    await Promise.all([get().fetchCleaningTasks(), get().fetchRooms()]);
+  },
+
+  completeCleaningTask: async (id, data) => {
+    const task = get().cleaningTasks.find((t) => t.id === id);
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    await api.updateCleaningTask(id, {
+      status: 'completed',
+      endTime: now,
+      completedAt: now,
+      ...data,
+    });
+    if (task) {
+      await api.updateRoomStatus(task.roomId, 'available');
+    }
+    await Promise.all([get().fetchCleaningTasks(), get().fetchRooms()]);
+  },
+
+  reworkCleaningTask: async (id) => {
+    const task = get().cleaningTasks.find((t) => t.id === id);
+    await api.updateCleaningTask(id, {
+      status: 'rework',
+      reworkCount: (task?.reworkCount || 0) + 1,
+    });
+    if (task) {
+      await api.updateRoomStatus(task.roomId, 'cleaning');
+    }
+    await Promise.all([get().fetchCleaningTasks(), get().fetchRooms()]);
+  },
+
   updateCleaningTask: async (id, data) => {
     await api.updateCleaningTask(id, data);
     await get().fetchCleaningTasks();
@@ -215,7 +258,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   completeMaintenanceOrder: async (id, data) => {
     await api.completeMaintenanceOrder(id, data);
-    await get().fetchMaintenanceOrders();
+    await Promise.all([get().fetchMaintenanceOrders(), get().fetchStatistics()]);
   },
 
   restockInventory: async (id, data) => {
@@ -224,7 +267,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   consumeInventory: async (id, data) => {
-    await api.consumeInventory(id, data);
-    await Promise.all([get().fetchInventory(), get().fetchInventoryLogs()]);
+    const item = get().inventory.find((i) => i.id === id);
+    if (!item || item.totalQuantity < (data.quantity as number)) {
+      return false;
+    }
+    try {
+      await api.consumeInventory(id, data);
+      await Promise.all([get().fetchInventory(), get().fetchInventoryLogs()]);
+      return true;
+    } catch {
+      return false;
+    }
   },
 }));
