@@ -47,17 +47,18 @@ const actionConfig: Record<MaintenanceActionType, { label: string; icon: typeof 
 };
 
 interface DetailModalProps {
-  order: MaintenanceOrder | null;
+  orderId: string | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
-function DetailModal({ order, isOpen, onClose }: DetailModalProps) {
+function DetailModal({ orderId, isOpen, onClose }: DetailModalProps) {
   const updateMaintenanceOrder = useAppStore((s) => s.updateMaintenanceOrder);
   const completeMaintenanceOrder = useAppStore((s) => s.completeMaintenanceOrder);
   const addMaintenanceTimeline = useAppStore((s) => s.addMaintenanceTimeline);
   const repairStaff = useAppStore((s) => s.repairStaff);
   const staff = useAppStore((s) => s.staff);
+  const allOrders = useAppStore((s) => s.maintenanceOrders);
 
   const [noteText, setNoteText] = useState('');
   const [completeResult, setCompleteResult] = useState('');
@@ -65,12 +66,24 @@ function DetailModal({ order, isOpen, onClose }: DetailModalProps) {
   const [showAssign, setShowAssign] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const order = useMemo(() => {
+    if (!orderId) return null;
+    return allOrders.find((o) => o.id === orderId) || null;
+  }, [allOrders, orderId]);
+
+  const sortedTimeline = useMemo(() => {
+    if (!order) return [];
+    const timeline = order.timeline || [];
+    return [...timeline].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [order]);
+
   useEffect(() => {
     if (isOpen) {
       setNoteText('');
       setCompleteResult('');
       setCompleteDuration('');
       setShowAssign(false);
+      setSubmitting(false);
     }
   }, [isOpen]);
 
@@ -132,16 +145,12 @@ function DetailModal({ order, isOpen, onClose }: DetailModalProps) {
         operatorName,
         operatorId,
       });
-      onClose();
+      setCompleteResult('');
+      setCompleteDuration('');
     } finally {
       setSubmitting(false);
     }
   };
-
-  const sortedTimeline = useMemo(() => {
-    const timeline = order.timeline || [];
-    return [...timeline].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [order.timeline]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -216,7 +225,7 @@ function DetailModal({ order, isOpen, onClose }: DetailModalProps) {
                       <span className="font-medium text-gray-900">{order.completedAt}</span>
                     </div>
                   )}
-                  {order.repairDurationMinutes && (
+                  {order.repairDurationMinutes != null && (
                     <div className="flex justify-between">
                       <span className="text-gray-500">处理耗时</span>
                       <span className="font-medium text-gray-900">{order.repairDurationMinutes} 分钟</span>
@@ -358,6 +367,7 @@ function DetailModal({ order, isOpen, onClose }: DetailModalProps) {
               <h3 className="font-serif text-base font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <History className="w-4 h-4 text-primary-600" />
                 处理时间线
+                <span className="text-xs font-normal text-gray-400">({sortedTimeline.length}条记录)</span>
               </h3>
               {sortedTimeline.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
@@ -671,7 +681,7 @@ export default function Maintenance() {
   const [formDescription, setFormDescription] = useState('');
   const [formPriority, setFormPriority] = useState<MaintenancePriority>('medium');
   const [formReporterName, setFormReporterName] = useState('');
-  const [detailOrder, setDetailOrder] = useState<MaintenanceOrder | null>(null);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [showDetail, setShowDetail] = useState(false);
 
   useEffect(() => {
@@ -716,7 +726,7 @@ export default function Maintenance() {
   }, [filteredOrders]);
 
   const handleOpenDetail = (order: MaintenanceOrder) => {
-    setDetailOrder(order);
+    setDetailOrderId(order.id);
     setShowDetail(true);
   };
 
@@ -921,11 +931,11 @@ export default function Maintenance() {
       )}
 
       <DetailModal
-        order={detailOrder}
+        orderId={detailOrderId}
         isOpen={showDetail}
         onClose={() => {
           setShowDetail(false);
-          setDetailOrder(null);
+          setDetailOrderId(null);
         }}
       />
     </Layout>

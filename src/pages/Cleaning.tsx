@@ -527,8 +527,22 @@ function ScheduleAssignModal({ isOpen, onClose, checkoutRooms, cleaners }: Sched
     if (isOpen) {
       setSelectedRoomIds([]);
       setSelectedCleanerId('');
+      setSubmitting(false);
     }
   }, [isOpen]);
+
+  const roomsByFloor = useMemo(() => {
+    const groups: Record<number, Room[]> = {};
+    checkoutRooms.forEach((r) => {
+      if (!groups[r.floor]) groups[r.floor] = [];
+      groups[r.floor].push(r);
+    });
+    return groups;
+  }, [checkoutRooms]);
+
+  const floors = useMemo(() => {
+    return Object.keys(roomsByFloor).map(Number).sort((a, b) => a - b);
+  }, [roomsByFloor]);
 
   const handleToggleRoom = (roomId: string) => {
     setSelectedRoomIds((prev) =>
@@ -558,17 +572,6 @@ function ScheduleAssignModal({ isOpen, onClose, checkoutRooms, cleaners }: Sched
   };
 
   if (!isOpen) return null;
-
-  const roomsByFloor = useMemo(() => {
-    const groups: Record<number, Room[]> = {};
-    checkoutRooms.forEach((r) => {
-      if (!groups[r.floor]) groups[r.floor] = [];
-      groups[r.floor].push(r);
-    });
-    return groups;
-  }, [checkoutRooms]);
-
-  const floors = Object.keys(roomsByFloor).map(Number).sort((a, b) => a - b);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
