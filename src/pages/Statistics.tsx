@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAppStore } from '../store/useAppStore';
-import type { Statistics as StatisticsType, DateRangeType } from '../../shared/types';
+import type { Statistics as StatisticsType, DateRangeType, RoomConsumption } from '../../shared/types';
 import {
   BarChart3,
   Clock,
@@ -12,6 +12,8 @@ import {
   Users,
   PieChart,
   Calendar,
+  Building2,
+  ListTodo,
 } from 'lucide-react';
 import {
   BarChart,
@@ -36,6 +38,7 @@ const dateRangeOptions: { value: DateRangeType; label: string; icon: typeof Cale
   { value: 'today', label: '今天', icon: Calendar },
   { value: 'week', label: '本周', icon: Calendar },
   { value: 'month', label: '本月', icon: Calendar },
+  { value: 'all', label: '全部', icon: Calendar },
 ];
 
 interface StatCardProps {
@@ -94,6 +97,25 @@ function EmptyState() {
   );
 }
 
+function RoomConsumptionCard({ room }: { room: RoomConsumption }) {
+  return (
+    <div className="card p-4 hover:shadow-lg transition-shadow">
+      <div className="flex items-center gap-2 mb-3">
+        <Building2 className="w-4 h-4 text-primary-600" />
+        <h4 className="font-semibold text-gray-900">{room.roomNumber}</h4>
+      </div>
+      <div className="space-y-1.5">
+        {room.items.map((item) => (
+          <div key={item.name} className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">{item.name}</span>
+            <span className="font-medium text-gray-900">{item.quantity}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function StatisticsPage() {
   const statistics = useAppStore((s) => s.statistics);
   const fetchStatistics = useAppStore((s) => s.fetchStatistics);
@@ -131,8 +153,10 @@ export default function StatisticsPage() {
     .map((c) => `${c.itemName}: ${c.avgQuantity.toFixed(1)}`)
     .join(' · ');
 
+  const rangeLabel = dateRangeOptions.find((o) => o.value === statisticsDateRange)?.label || '全部';
+
   return (
-    <Layout title="统计分析" subtitle="运营数据概览与趋势分析">
+    <Layout title="统计分析" subtitle={`运营数据概览与趋势分析 · ${rangeLabel}数据`}>
       <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600 flex items-center gap-1">
@@ -273,7 +297,7 @@ export default function StatisticsPage() {
         </div>
       </div>
 
-      <div className="card p-6">
+      <div className="card p-6 mb-6">
         <div className="flex items-center gap-2 mb-6">
           <TrendingUp className="w-5 h-5 text-primary-600" />
           <h3 className="font-serif text-lg font-semibold text-gray-800">月度清洁/维修趋势</h3>
@@ -314,6 +338,26 @@ export default function StatisticsPage() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <ListTodo className="w-5 h-5 text-primary-600" />
+          <h3 className="font-serif text-lg font-semibold text-gray-800">按房间消耗统计</h3>
+          <span className="text-sm text-gray-500 font-normal">（{stats.consumptionByRoom.length} 间房）</span>
+        </div>
+        {stats.consumptionByRoom.length === 0 ? (
+          <div className="py-12 text-center text-gray-500">
+            <Package className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="text-sm">暂无房间消耗数据</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {stats.consumptionByRoom.map((room) => (
+              <RoomConsumptionCard key={room.roomNumber} room={room} />
+            ))}
+          </div>
+        )}
       </div>
     </Layout>
   );

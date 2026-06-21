@@ -24,29 +24,38 @@ import {
   staffSeed,
 } from './seed';
 
-function getDateRangeStart(range: DateRangeType): string | null {
+function getDateRange(range: DateRangeType): { start: string | null; end: string | null } {
   const now = new Date();
-  if (range === 'all') return null;
+  if (range === 'all') return { start: null, end: null };
+
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+
   if (range === 'today') {
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return start.toISOString().slice(0, 10);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return { start: formatDate(start), end: formatDate(end) };
   }
   if (range === 'week') {
     const day = now.getDay();
     const diff = now.getDate() - day + (day === 0 ? -6 : 1);
     const start = new Date(now.getFullYear(), now.getMonth(), diff);
-    return start.toISOString().slice(0, 10);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start: formatDate(start), end: formatDate(end) };
   }
   if (range === 'month') {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return start.toISOString().slice(0, 10);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start: formatDate(start), end: formatDate(end) };
   }
-  return null;
+  return { start: null, end: null };
 }
 
-function isInRange(dateStr: string, startDate: string | null): boolean {
-  if (!startDate) return true;
-  return dateStr.slice(0, 10) >= startDate;
+function isInRange(dateStr: string, startDate: string | null, endDate: string | null): boolean {
+  const date = dateStr.slice(0, 10);
+  if (startDate && date < startDate) return false;
+  if (endDate && date >= endDate) return false;
+  return true;
 }
 
 class DataStore {
@@ -130,6 +139,7 @@ class DataStore {
           };
           this.cleaningTasks.push(newTask);
           createdTasks.push(newTask);
+          room.status = 'cleaning';
         }
       }
     });
@@ -296,8 +306,8 @@ class DataStore {
   }
 
   getStatistics(dateRange: DateRangeType = 'all'): Statistics {
-    const startDate = getDateRangeStart(dateRange);
-    const inRange = (d: string) => isInRange(d, startDate);
+    const { start, end } = getDateRange(dateRange);
+    const inRange = (d: string) => isInRange(d, start, end);
 
     const completedTasks = this.cleaningTasks.filter((t) => t.endTime && t.startTime && inRange(t.createdAt));
     const avgCleaningTurnaround = completedTasks.length > 0
@@ -326,6 +336,22 @@ class DataStore {
         avgQuantity: roomCount > 0 ? Number((totalConsumed / roomCount).toFixed(2)) : 0,
       };
     });
+
+    const consumptionByRoomMap = new Map<string, { roomNumber: string; items: { name: string; quantity: number }[] }>();
+    filteredLogs.forEach((log) => {
+      if (!log.roomNumber) return;
+      if (!consumptionByRoomMap.has(log.roomNumber)) {
+        consumptionByRoomMap.set(log.roomNumber, { roomNumber: log.roomNumber, items: [] });
+      }
+      const roomData = consumptionByRoomMap.get(log.roomNumber)!;
+      const existingItem = roomData.items.find((i) => i.name === log.itemName);
+      if (existingItem) {
+        existingItem.quantity += log.quantity;
+      } else {
+        roomData.items.push({ name: log.itemName, quantity: log.quantity });
+      }
+    });
+    const consumptionByRoom = Array.from(consumptionByRoomMap.values()).sort((a, b) => a.roomNumber.localeCompare(b.roomNumber));
 
     const cleaningByPerson = this.getCleaners().map((cleaner) => {
       const personTasks = completedTasks.filter((t) => t.assigneeId === cleaner.id);
@@ -363,6 +389,7 @@ class DataStore {
       totalReworkCount: totalRework,
       avgRepairDurationMinutes: Math.round(avgRepairDuration),
       consumptionPerRoom,
+      consumptionByRoom,
       cleaningByPerson,
       repairsByType,
       monthlyTrend,

@@ -115,6 +115,16 @@ export interface Staff {
 
 export type DateRangeType = 'today' | 'week' | 'month' | 'all';
 
+export interface RoomConsumptionItem {
+  name: string;
+  quantity: number;
+}
+
+export interface RoomConsumption {
+  roomNumber: string;
+  items: RoomConsumptionItem[];
+}
+
 export interface Statistics {
   avgCleaningTurnaroundMinutes: number;
   totalReworkCount: number;
@@ -123,6 +133,7 @@ export interface Statistics {
     itemName: string;
     avgQuantity: number;
   }[];
+  consumptionByRoom: RoomConsumption[];
   cleaningByPerson: { name: string; count: number; avgMinutes: number }[];
   repairsByType: { type: string; count: number }[];
   monthlyTrend: { month: string; cleaningCount: number; repairCount: number }[];
