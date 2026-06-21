@@ -5,6 +5,7 @@ import type {
   InventoryItem,
   InventoryLog,
   Staff,
+  InventoryCombo,
 } from '../../shared/types';
 
 export const staffSeed: Staff[] = [
@@ -129,6 +130,11 @@ export const maintenanceOrdersSeed: MaintenanceOrder[] = [
     photos: [],
     createdAt: '2026-06-22 09:00',
     startedAt: '2026-06-22 09:30',
+    timeline: [
+      { id: 'tl1', orderId: 'mo1', action: 'created', operatorName: '王芳', operatorId: 's1', createdAt: '2026-06-22 09:00' },
+      { id: 'tl2', orderId: 'mo1', action: 'assigned', operatorName: '王芳', operatorId: 's1', note: '指派给陈师傅处理', createdAt: '2026-06-22 09:15' },
+      { id: 'tl3', orderId: 'mo1', action: 'started', operatorName: '陈师傅', operatorId: 's5', createdAt: '2026-06-22 09:30' },
+    ],
   },
   {
     id: 'mo2',
@@ -141,6 +147,9 @@ export const maintenanceOrdersSeed: MaintenanceOrder[] = [
     reporterName: '张阿姨',
     photos: [],
     createdAt: '2026-06-22 08:30',
+    timeline: [
+      { id: 'tl4', orderId: 'mo2', action: 'created', operatorName: '张阿姨', operatorId: 's3', note: '清洁时发现漏水', createdAt: '2026-06-22 08:30' },
+    ],
   },
   {
     id: 'mo3',
@@ -159,6 +168,12 @@ export const maintenanceOrdersSeed: MaintenanceOrder[] = [
     completedAt: '2026-06-21 15:45',
     result: '更换灯泡后正常',
     repairDurationMinutes: 15,
+    timeline: [
+      { id: 'tl5', orderId: 'mo3', action: 'created', operatorName: '李阿姨', operatorId: 's2', createdAt: '2026-06-21 15:00' },
+      { id: 'tl6', orderId: 'mo3', action: 'assigned', operatorName: '王芳', operatorId: 's1', createdAt: '2026-06-21 15:10' },
+      { id: 'tl7', orderId: 'mo3', action: 'started', operatorName: '陈师傅', operatorId: 's5', createdAt: '2026-06-21 15:30' },
+      { id: 'tl8', orderId: 'mo3', action: 'completed', operatorName: '陈师傅', operatorId: 's5', note: '更换灯泡后正常', createdAt: '2026-06-21 15:45' },
+    ],
   },
   {
     id: 'mo4',
@@ -171,6 +186,9 @@ export const maintenanceOrdersSeed: MaintenanceOrder[] = [
     reporterName: '王芳',
     photos: [],
     createdAt: '2026-06-22 10:00',
+    timeline: [
+      { id: 'tl9', orderId: 'mo4', action: 'created', operatorName: '王芳', operatorId: 's1', note: '客人反馈门锁不灵敏，需紧急处理', createdAt: '2026-06-22 10:00' },
+    ],
   },
   {
     id: 'mo5',
@@ -189,6 +207,12 @@ export const maintenanceOrdersSeed: MaintenanceOrder[] = [
     completedAt: '2026-06-21 20:20',
     result: '更换电池',
     repairDurationMinutes: 5,
+    timeline: [
+      { id: 'tl10', orderId: 'mo5', action: 'created', operatorName: '客人', createdAt: '2026-06-21 20:00' },
+      { id: 'tl11', orderId: 'mo5', action: 'assigned', operatorName: '王芳', operatorId: 's1', createdAt: '2026-06-21 20:05' },
+      { id: 'tl12', orderId: 'mo5', action: 'started', operatorName: '陈师傅', operatorId: 's5', createdAt: '2026-06-21 20:15' },
+      { id: 'tl13', orderId: 'mo5', action: 'completed', operatorName: '陈师傅', operatorId: 's5', note: '更换电池', createdAt: '2026-06-21 20:20' },
+    ],
   },
 ];
 
@@ -200,6 +224,46 @@ export const inventorySeed: InventoryItem[] = [
   { id: 'inv5', name: '抽纸', category: 'tissue', unit: '盒', totalQuantity: 180, warningThreshold: 60, lastRestockedAt: '2026-06-21' },
   { id: 'inv6', name: '卷纸', category: 'tissue', unit: '卷', totalQuantity: 45, warningThreshold: 60, lastRestockedAt: '2026-06-15' },
   { id: 'inv7', name: '瓶装水', category: 'water', unit: '瓶', totalQuantity: 300, warningThreshold: 100, lastRestockedAt: '2026-06-22' },
+];
+
+export const inventoryCombosSeed: InventoryCombo[] = [
+  {
+    id: 'combo1',
+    name: '标准间补给包',
+    description: '适合标准间/大床房的日常补给',
+    items: [
+      { itemId: 'inv1', itemName: '牙具套装', quantity: 2 },
+      { itemId: 'inv4', itemName: '一次性拖鞋', quantity: 2 },
+      { itemId: 'inv5', itemName: '抽纸', quantity: 1 },
+      { itemId: 'inv7', itemName: '瓶装水', quantity: 2 },
+    ],
+  },
+  {
+    id: 'combo2',
+    name: '家庭房补给包',
+    description: '适合家庭房的全套补给',
+    items: [
+      { itemId: 'inv1', itemName: '牙具套装', quantity: 4 },
+      { itemId: 'inv4', itemName: '一次性拖鞋', quantity: 4 },
+      { itemId: 'inv5', itemName: '抽纸', quantity: 2 },
+      { itemId: 'inv6', itemName: '卷纸', quantity: 1 },
+      { itemId: 'inv7', itemName: '瓶装水', quantity: 4 },
+    ],
+  },
+  {
+    id: 'combo3',
+    name: '豪华套房补给包',
+    description: '适合豪华套房/总统套房的高端补给',
+    items: [
+      { itemId: 'inv1', itemName: '牙具套装', quantity: 2 },
+      { itemId: 'inv2', itemName: '沐浴露', quantity: 1 },
+      { itemId: 'inv3', itemName: '洗发水', quantity: 1 },
+      { itemId: 'inv4', itemName: '一次性拖鞋', quantity: 2 },
+      { itemId: 'inv5', itemName: '抽纸', quantity: 2 },
+      { itemId: 'inv6', itemName: '卷纸', quantity: 2 },
+      { itemId: 'inv7', itemName: '瓶装水', quantity: 4 },
+    ],
+  },
 ];
 
 export const inventoryLogsSeed: InventoryLog[] = [

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { dataStore } from '../data/store';
-import type { MaintenanceOrder, MaintenanceStatus } from '../../shared/types';
+import type { MaintenanceOrder, MaintenanceStatus, MaintenanceActionType } from '../../shared/types';
 
 const router = Router();
 
@@ -30,8 +30,26 @@ router.put('/:id', (req: Request, res: Response) => {
   res.json({ success: true, data: order });
 });
 
+router.post('/:id/timeline', (req: Request, res: Response) => {
+  const { action, operatorName, operatorId, note } = req.body;
+  if (!action || !operatorName) {
+    return res.status(400).json({ success: false, message: '参数缺失' });
+  }
+  const timeline = dataStore.addMaintenanceTimeline(
+    req.params.id,
+    action as MaintenanceActionType,
+    operatorName,
+    operatorId,
+    note
+  );
+  if (!timeline) {
+    return res.status(404).json({ success: false, message: '工单不存在' });
+  }
+  res.json({ success: true, data: timeline });
+});
+
 router.put('/:id/complete', (req: Request, res: Response) => {
-  const { result, repairDurationMinutes } = req.body;
+  const { result, repairDurationMinutes, operatorName, operatorId } = req.body;
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
   const order = dataStore.updateMaintenanceOrder(req.params.id, {
     status: 'completed',
@@ -41,6 +59,15 @@ router.put('/:id/complete', (req: Request, res: Response) => {
   });
   if (!order) {
     return res.status(404).json({ success: false, message: '工单不存在' });
+  }
+  if (operatorName) {
+    dataStore.addMaintenanceTimeline(
+      req.params.id,
+      'completed',
+      operatorName,
+      operatorId,
+      result
+    );
   }
   res.json({ success: true, data: order });
 });

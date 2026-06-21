@@ -2,28 +2,59 @@ import type {
   Room,
   CleaningTask,
   MaintenanceOrder,
+  MaintenanceTimeline,
+  MaintenanceActionType,
   InventoryItem,
   InventoryLog,
+  InventoryCombo,
   Staff,
   Statistics,
   RoomStatus,
   CleaningStatus,
   MaintenanceStatus,
+  DateRangeType,
 } from '../../shared/types';
 import {
   roomsSeed,
   cleaningTasksSeed,
   maintenanceOrdersSeed,
   inventorySeed,
+  inventoryCombosSeed,
   inventoryLogsSeed,
   staffSeed,
 } from './seed';
+
+function getDateRangeStart(range: DateRangeType): string | null {
+  const now = new Date();
+  if (range === 'all') return null;
+  if (range === 'today') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return start.toISOString().slice(0, 10);
+  }
+  if (range === 'week') {
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const start = new Date(now.getFullYear(), now.getMonth(), diff);
+    return start.toISOString().slice(0, 10);
+  }
+  if (range === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return start.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function isInRange(dateStr: string, startDate: string | null): boolean {
+  if (!startDate) return true;
+  return dateStr.slice(0, 10) >= startDate;
+}
 
 class DataStore {
   private rooms: Room[] = [...roomsSeed];
   private cleaningTasks: CleaningTask[] = [...cleaningTasksSeed];
   private maintenanceOrders: MaintenanceOrder[] = [...maintenanceOrdersSeed];
   private inventory: InventoryItem[] = [...inventorySeed];
+  private inventoryCombos: InventoryCombo[] = [...inventoryCombosSeed];
   private inventoryLogs: InventoryLog[] = [...inventoryLogsSeed];
   private staff: Staff[] = [...staffSeed];
 
@@ -47,6 +78,10 @@ class DataStore {
     return room;
   }
 
+  getCheckoutRooms(): Room[] {
+    return this.rooms.filter((r) => r.status === 'checkout');
+  }
+
   getCleaningTasks(status?: CleaningStatus | 'all', floor?: number): CleaningTask[] {
     return this.cleaningTasks.filter((t) => {
       if (status && status !== 'all' && t.status !== status) return false;
@@ -67,6 +102,38 @@ class DataStore {
     };
     this.cleaningTasks.push(newTask);
     return newTask;
+  }
+
+  batchAssignCleaningTasks(roomIds: string[], assigneeId: string, assigneeName: string): CleaningTask[] {
+    const createdTasks: CleaningTask[] = [];
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    roomIds.forEach((roomId) => {
+      const room = this.rooms.find((r) => r.id === roomId);
+      if (room && room.status === 'checkout') {
+        const existingTask = this.cleaningTasks.find(
+          (t) => t.roomId === roomId && (t.status === 'pending' || t.status === 'inProgress')
+        );
+        if (!existingTask) {
+          const newTask: CleaningTask = {
+            id: `ct${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            roomId,
+            roomNumber: room.number,
+            floor: room.floor,
+            assigneeId,
+            assigneeName,
+            status: 'pending',
+            photos: [],
+            anomalies: [],
+            lostItems: [],
+            createdAt: now,
+            reworkCount: 0,
+          };
+          this.cleaningTasks.push(newTask);
+          createdTasks.push(newTask);
+        }
+      }
+    });
+    return createdTasks;
   }
 
   updateCleaningTask(id: string, updates: Partial<CleaningTask>): CleaningTask | undefined {
@@ -92,13 +159,47 @@ class DataStore {
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  createMaintenanceOrder(order: Omit<MaintenanceOrder, 'id' | 'createdAt' | 'photos'>): MaintenanceOrder {
+  addMaintenanceTimeline(
+    orderId: string,
+    action: MaintenanceActionType,
+    operatorName: string,
+    operatorId?: string,
+    note?: string
+  ): MaintenanceTimeline | undefined {
+    const order = this.maintenanceOrders.find((o) => o.id === orderId);
+    if (!order) return undefined;
+    const timeline: MaintenanceTimeline = {
+      id: `tl${Date.now()}`,
+      orderId,
+      action,
+      operatorName,
+      operatorId,
+      note,
+      createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    };
+    if (!order.timeline) {
+      order.timeline = [];
+    }
+    order.timeline.push(timeline);
+    return timeline;
+  }
+
+  createMaintenanceOrder(order: Omit<MaintenanceOrder, 'id' | 'createdAt' | 'photos' | 'timeline'>): MaintenanceOrder {
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
     const newOrder: MaintenanceOrder = {
       ...order,
       id: `mo${Date.now()}`,
       photos: [],
-      createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      createdAt: now,
+      timeline: [],
     };
+    newOrder.timeline.push({
+      id: `tl${Date.now()}`,
+      orderId: newOrder.id,
+      action: 'created',
+      operatorName: order.reporterName,
+      createdAt: now,
+    });
     this.maintenanceOrders.push(newOrder);
     return newOrder;
   }
@@ -113,6 +214,10 @@ class DataStore {
 
   getInventory(): InventoryItem[] {
     return this.inventory;
+  }
+
+  getInventoryCombos(): InventoryCombo[] {
+    return this.inventoryCombos;
   }
 
   getInventoryLogs(): InventoryLog[] {
@@ -143,7 +248,7 @@ class DataStore {
     if (item && item.totalQuantity >= quantity) {
       item.totalQuantity -= quantity;
       this.inventoryLogs.push({
-        id: `log${Date.now()}`,
+        id: `log${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         itemId,
         itemName: item.name,
         type: 'out',
@@ -152,8 +257,30 @@ class DataStore {
         operatorName,
         createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
       });
+      return item;
     }
-    return item;
+    return undefined;
+  }
+
+  consumeComboInventory(comboId: string, roomNumber: string, operatorName: string): { success: boolean; message: string; items?: { name: string; quantity: number }[] } {
+    const combo = this.inventoryCombos.find((c) => c.id === comboId);
+    if (!combo) {
+      return { success: false, message: '组合包不存在' };
+    }
+    for (const comboItem of combo.items) {
+      const item = this.inventory.find((i) => i.id === comboItem.itemId);
+      if (!item || item.totalQuantity < comboItem.quantity) {
+        return { success: false, message: `${comboItem.itemName}库存不足，当前库存${item?.totalQuantity || 0}${item?.unit || ''}` };
+      }
+    }
+    const consumedItems: { name: string; quantity: number }[] = [];
+    for (const comboItem of combo.items) {
+      const item = this.consumeInventory(comboItem.itemId, comboItem.quantity, roomNumber, operatorName);
+      if (item) {
+        consumedItems.push({ name: comboItem.itemName, quantity: comboItem.quantity });
+      }
+    }
+    return { success: true, message: '领用成功', items: consumedItems };
   }
 
   getStaff(): Staff[] {
@@ -168,8 +295,11 @@ class DataStore {
     return this.staff.filter((s) => s.role === 'repair');
   }
 
-  getStatistics(): Statistics {
-    const completedTasks = this.cleaningTasks.filter((t) => t.endTime && t.startTime);
+  getStatistics(dateRange: DateRangeType = 'all'): Statistics {
+    const startDate = getDateRangeStart(dateRange);
+    const inRange = (d: string) => isInRange(d, startDate);
+
+    const completedTasks = this.cleaningTasks.filter((t) => t.endTime && t.startTime && inRange(t.createdAt));
     const avgCleaningTurnaround = completedTasks.length > 0
       ? completedTasks.reduce((sum, t) => {
           const start = new Date(t.startTime!).getTime();
@@ -178,17 +308,18 @@ class DataStore {
         }, 0) / completedTasks.length
       : 0;
 
-    const totalRework = this.cleaningTasks.reduce((sum, t) => sum + t.reworkCount, 0);
+    const totalRework = this.cleaningTasks.filter((t) => inRange(t.createdAt)).reduce((sum, t) => sum + t.reworkCount, 0);
 
-    const completedRepairs = this.maintenanceOrders.filter((o) => o.repairDurationMinutes);
+    const completedRepairs = this.maintenanceOrders.filter((o) => o.repairDurationMinutes && inRange(o.createdAt));
     const avgRepairDuration = completedRepairs.length > 0
       ? completedRepairs.reduce((sum, o) => sum + (o.repairDurationMinutes || 0), 0) / completedRepairs.length
       : 0;
 
     const roomCount = this.rooms.length;
+    const filteredLogs = this.inventoryLogs.filter((l) => l.type === 'out' && inRange(l.createdAt));
     const consumptionPerRoom = this.inventory.map((item) => {
-      const totalConsumed = this.inventoryLogs
-        .filter((l) => l.itemId === item.id && l.type === 'out')
+      const totalConsumed = filteredLogs
+        .filter((l) => l.itemId === item.id)
         .reduce((sum, l) => sum + l.quantity, 0);
       return {
         itemName: item.name,
@@ -213,7 +344,7 @@ class DataStore {
     });
 
     const repairsByTypeMap = new Map<string, number>();
-    this.maintenanceOrders.forEach((o) => {
+    this.maintenanceOrders.filter((o) => inRange(o.createdAt)).forEach((o) => {
       repairsByTypeMap.set(o.location, (repairsByTypeMap.get(o.location) || 0) + 1);
     });
     const repairsByType = Array.from(repairsByTypeMap.entries()).map(([type, count]) => ({ type, count }));
@@ -224,7 +355,7 @@ class DataStore {
       { month: '3月', cleaningCount: 61, repairCount: 10 },
       { month: '4月', cleaningCount: 58, repairCount: 18 },
       { month: '5月', cleaningCount: 72, repairCount: 14 },
-      { month: '6月', cleaningCount: this.cleaningTasks.length, repairCount: this.maintenanceOrders.length },
+      { month: '6月', cleaningCount: this.cleaningTasks.filter((t) => inRange(t.createdAt)).length, repairCount: this.maintenanceOrders.filter((o) => inRange(o.createdAt)).length },
     ];
 
     return {
@@ -235,6 +366,7 @@ class DataStore {
       cleaningByPerson,
       repairsByType,
       monthlyTrend,
+      dateRange,
     };
   }
 }

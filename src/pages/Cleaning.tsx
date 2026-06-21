@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { useAppStore } from '../store/useAppStore';
-import type { CleaningTask, CleaningStatus, LostItem } from '../../shared/types';
+import type { CleaningTask, CleaningStatus, LostItem, Room, Staff } from '../../shared/types';
 import {
   Sparkles,
   Clock,
@@ -14,8 +14,16 @@ import {
   XCircle,
   Plus,
   X,
+  Calendar,
+  Layers,
+  ListTodo,
+  CheckSquare,
+  Building2,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+type ViewMode = 'list' | 'schedule';
 
 const statusConfig: Record<CleaningStatus | 'all', { label: string; icon: typeof Sparkles; bg: string; text: string; dot: string; border: string }> = {
   all: { label: '全部', icon: Sparkles, bg: 'bg-gray-50', text: 'text-gray-700', dot: 'bg-gray-500', border: 'border-gray-200' },
@@ -502,18 +510,229 @@ function CompleteModal({ task, isOpen, onClose }: CompleteModalProps) {
   );
 }
 
+interface ScheduleAssignModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  checkoutRooms: Room[];
+  cleaners: Staff[];
+}
+
+function ScheduleAssignModal({ isOpen, onClose, checkoutRooms, cleaners }: ScheduleAssignModalProps) {
+  const batchAssignCleaningTasks = useAppStore((s) => s.batchAssignCleaningTasks);
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
+  const [selectedCleanerId, setSelectedCleanerId] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedRoomIds([]);
+      setSelectedCleanerId('');
+    }
+  }, [isOpen]);
+
+  const handleToggleRoom = (roomId: string) => {
+    setSelectedRoomIds((prev) =>
+      prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedRoomIds.length === checkoutRooms.length) {
+      setSelectedRoomIds([]);
+    } else {
+      setSelectedRoomIds(checkoutRooms.map((r) => r.id));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (selectedRoomIds.length === 0 || !selectedCleanerId) return;
+    const cleaner = cleaners.find((c) => c.id === selectedCleanerId);
+    if (!cleaner) return;
+    setSubmitting(true);
+    try {
+      await batchAssignCleaningTasks(selectedRoomIds, cleaner.id, cleaner.name);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const roomsByFloor = useMemo(() => {
+    const groups: Record<number, Room[]> = {};
+    checkoutRooms.forEach((r) => {
+      if (!groups[r.floor]) groups[r.floor] = [];
+      groups[r.floor].push(r);
+    });
+    return groups;
+  }, [checkoutRooms]);
+
+  const floors = Object.keys(roomsByFloor).map(Number).sort((a, b) => a - b);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 font-serif flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary-600" />
+              排班分配 - 退房房间批量指派
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">选择退房房间并分配给清洁阿姨</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+            disabled={submitting}
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-6 py-4 overflow-y-auto flex-1 space-y-6">
+          <div>
+            <label className="label flex items-center gap-1.5">
+              <User className="w-4 h-4" />
+              指派清洁阿姨 <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedCleanerId}
+              onChange={(e) => setSelectedCleanerId(e.target.value)}
+              className="input"
+              required
+            >
+              <option value="">请选择清洁阿姨</option>
+              {cleaners.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.floor ? `（负责${c.floor}楼）` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="label flex items-center gap-1.5 mb-0">
+                <Building2 className="w-4 h-4" />
+                选择退房房间 <span className="text-red-500">*</span>
+                <span className="text-xs text-gray-400 font-normal">（已选 {selectedRoomIds.length} 间）</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 px-2 py-1 rounded hover:bg-primary-50 transition-colors"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                {selectedRoomIds.length === checkoutRooms.length ? '取消全选' : '全选'}
+              </button>
+            </div>
+
+            {checkoutRooms.length === 0 ? (
+              <div className="p-8 bg-gray-50 rounded-xl text-center">
+                <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">暂无退房房间需要清洁</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {floors.map((floor) => (
+                  <div key={floor}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-1 h-4 bg-accent-400 rounded" />
+                      <span className="font-medium text-sm text-gray-700">{floor}楼</span>
+                      <span className="text-xs text-gray-400">（{roomsByFloor[floor].length}间）</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {roomsByFloor[floor].map((room) => {
+                        const isSelected = selectedRoomIds.includes(room.id);
+                        return (
+                          <button
+                            key={room.id}
+                            type="button"
+                            onClick={() => handleToggleRoom(room.id)}
+                            className={cn(
+                              'p-3 rounded-lg border-2 text-left transition-all',
+                              isSelected
+                                ? 'border-primary-500 bg-primary-50'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={cn(
+                                'w-4 h-4 rounded border-2 flex items-center justify-center',
+                                isSelected ? 'border-primary-500 bg-primary-500' : 'border-gray-300'
+                              )}>
+                                {isSelected && <CheckCircle className="w-3 h-3 text-white" />}
+                              </div>
+                              <div>
+                                <p className="font-bold text-gray-900">{room.number}</p>
+                                <p className="text-xs text-gray-500">{room.type}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="btn-outline px-5 py-2 text-sm"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || selectedRoomIds.length === 0 || !selectedCleanerId}
+            className={cn(
+              'btn-primary px-5 py-2 text-sm flex items-center gap-1.5',
+              (selectedRoomIds.length === 0 || !selectedCleanerId) && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            {submitting ? (
+              <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <User className="w-4 h-4" />
+            )}
+            确认分配
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Cleaning() {
   const cleaningTasks = useAppStore((s) => s.cleaningTasks);
   const cleaners = useAppStore((s) => s.cleaners);
+  const checkoutRooms = useAppStore((s) => s.checkoutRooms);
   const fetchCleaningTasks = useAppStore((s) => s.fetchCleaningTasks);
+  const fetchCheckoutRooms = useAppStore((s) => s.fetchCheckoutRooms);
   const cleaningFilterStatus = useAppStore((s) => s.cleaningFilterStatus);
   const setCleaningFilterStatus = useAppStore((s) => s.setCleaningFilterStatus);
+  const fetchStaff = useAppStore((s) => s.fetchStaff);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [scheduleFloor, setScheduleFloor] = useState<number | 'all'>('all');
   const [modalTask, setModalTask] = useState<CleaningTask | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
   useEffect(() => {
+    fetchStaff();
     fetchCleaningTasks();
-  }, [fetchCleaningTasks, cleaningFilterStatus]);
+    fetchCheckoutRooms();
+  }, [fetchCleaningTasks, fetchCheckoutRooms, fetchStaff, cleaningFilterStatus]);
 
   const stats = useMemo(() => {
     const s: Record<CleaningStatus, number> = {
@@ -536,6 +755,40 @@ export default function Cleaning() {
     });
     return groups;
   }, [cleaningTasks]);
+
+  const scheduleFloors = useMemo(() => {
+    const set = new Set<number>();
+    cleaningTasks.forEach((t) => set.add(t.floor));
+    checkoutRooms.forEach((r) => set.add(r.floor));
+    return Array.from(set).sort((a, b) => a - b);
+  }, [cleaningTasks, checkoutRooms]);
+
+  const scheduleData = useMemo(() => {
+    const floors = scheduleFloor === 'all' ? scheduleFloors : [scheduleFloor as number];
+    const result: {
+      floor: number;
+      checkoutRooms: Room[];
+      pendingTasks: CleaningTask[];
+      inProgressTasks: CleaningTask[];
+      completedTasks: CleaningTask[];
+      cleaners: Staff[];
+    }[] = [];
+
+    floors.forEach((floor) => {
+      const floorCheckout = checkoutRooms.filter((r) => r.floor === floor);
+      const floorTasks = cleaningTasks.filter((t) => t.floor === floor);
+      const floorCleaners = cleaners.filter((c) => !c.floor || c.floor === floor);
+      result.push({
+        floor,
+        checkoutRooms: floorCheckout,
+        pendingTasks: floorTasks.filter((t) => t.status === 'pending'),
+        inProgressTasks: floorTasks.filter((t) => t.status === 'inProgress'),
+        completedTasks: floorTasks.filter((t) => t.status === 'completed'),
+        cleaners: floorCleaners.length > 0 ? floorCleaners : cleaners,
+      });
+    });
+    return result;
+  }, [scheduleFloor, scheduleFloors, checkoutRooms, cleaningTasks, cleaners]);
 
   const floors = useMemo(() => {
     return Object.keys(groupedByFloor)
@@ -576,64 +829,245 @@ export default function Cleaning() {
         ))}
       </div>
 
-      <div className="mb-6 flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-gray-600 mr-2">状态筛选:</span>
-        {(Object.keys(statusConfig) as (CleaningStatus | 'all')[]).map((status) => {
-          const config = statusConfig[status];
-          const Icon = config.icon;
-          const isActive = cleaningFilterStatus === status;
-          return (
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-600 mr-2">状态筛选:</span>
+          {(Object.keys(statusConfig) as (CleaningStatus | 'all')[]).map((status) => {
+            const config = statusConfig[status];
+            const Icon = config.icon;
+            const isActive = cleaningFilterStatus === status;
+            return (
+              <button
+                key={status}
+                onClick={() => setCleaningFilterStatus(status)}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5',
+                  isActive
+                    ? cn('bg-primary-500 text-white')
+                    : cn('bg-white border border-gray-200 text-gray-600 hover:bg-gray-50')
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                {config.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-gray-100 rounded-lg p-1">
             <button
-              key={status}
-              onClick={() => setCleaningFilterStatus(status)}
+              onClick={() => setViewMode('list')}
               className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5',
-                isActive
-                  ? cn('bg-primary-500 text-white')
-                  : cn('bg-white border border-gray-200 text-gray-600 hover:bg-gray-50')
+                'px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
+                viewMode === 'list' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
               )}
             >
-              <Icon className="w-4 h-4" />
-              {config.label}
+              <ListTodo className="w-4 h-4" />
+              列表视图
             </button>
-          );
-        })}
+            <button
+              onClick={() => setViewMode('schedule')}
+              className={cn(
+                'px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
+                viewMode === 'schedule' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              )}
+            >
+              <Layers className="w-4 h-4" />
+              排班视图
+            </button>
+          </div>
+
+          {viewMode === 'schedule' && (
+            <button
+              onClick={() => setIsAssignModalOpen(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              批量分配
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-8">
-        {floors.length === 0 ? (
-          <div className="card p-12 text-center">
-            <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">暂无清洁任务</p>
-          </div>
-        ) : (
-          floors.map((floor) => (
-            <div key={floor}>
-              <h3 className="font-serif text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="w-1 h-5 bg-accent-400 rounded" />
-                {floor}楼
-                <span className="text-sm font-normal text-gray-500">
-                  ({groupedByFloor[floor].length}个任务)
-                </span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {groupedByFloor[floor].map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onOpenCompleteModal={openCompleteModal}
-                  />
-                ))}
-              </div>
+      {viewMode === 'schedule' && (
+        <div className="mb-6 flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-600 mr-2">楼层筛选:</span>
+          <button
+            onClick={() => setScheduleFloor('all')}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-sm transition-colors',
+              scheduleFloor === 'all' ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            )}
+          >
+            全部
+          </button>
+          {scheduleFloors.map((f) => (
+            <button
+              key={f}
+              onClick={() => setScheduleFloor(scheduleFloor === f ? 'all' : f)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm transition-colors',
+                scheduleFloor === f ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              )}
+            >
+              {f}楼
+            </button>
+          ))}
+        </div>
+      )}
+
+      {viewMode === 'list' ? (
+        <div className="space-y-8">
+          {floors.length === 0 ? (
+            <div className="card p-12 text-center">
+              <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">暂无清洁任务</p>
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            floors.map((floor) => (
+              <div key={floor}>
+                <h3 className="font-serif text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <span className="w-1 h-5 bg-accent-400 rounded" />
+                  {floor}楼
+                  <span className="text-sm font-normal text-gray-500">
+                    ({groupedByFloor[floor].length}个任务)
+                  </span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {groupedByFloor[floor].map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onOpenCompleteModal={openCompleteModal}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {scheduleData.length === 0 ? (
+            <div className="card p-12 text-center">
+              <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">暂无排班数据</p>
+            </div>
+          ) : (
+            scheduleData.map((data) => (
+              <div key={data.floor} className="card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-serif text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <span className="w-1 h-5 bg-accent-400 rounded" />
+                    {data.floor}楼
+                  </h3>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <User className="w-4 h-4" />
+                    负责阿姨: {data.cleaners.map((c) => c.name).join('、') || '暂无'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-4 bg-orange-50 rounded-xl border border-orange-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <LogOut className="w-4 h-4 text-orange-600" />
+                      <span className="font-medium text-orange-700">待分配退房</span>
+                      <span className="badge bg-orange-100 text-orange-700">{data.checkoutRooms.length}</span>
+                    </div>
+                    {data.checkoutRooms.length === 0 ? (
+                      <p className="text-sm text-orange-500/70">暂无退房房间</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {data.checkoutRooms.map((room) => (
+                          <span key={room.id} className="px-2 py-1 bg-white rounded-md text-sm text-orange-700 border border-orange-200">
+                            {room.number}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <span className="font-medium text-amber-700">待清洁</span>
+                      <span className="badge bg-amber-100 text-amber-700">{data.pendingTasks.length}</span>
+                    </div>
+                    {data.pendingTasks.length === 0 ? (
+                      <p className="text-sm text-amber-500/70">暂无待清洁任务</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {data.pendingTasks.map((task) => (
+                          <div key={task.id} className="flex items-center justify-between px-2 py-1 bg-white rounded-md border border-amber-200">
+                            <span className="text-sm font-medium text-amber-800">{task.roomNumber}</span>
+                            <span className="text-xs text-amber-600">{task.assigneeName}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles className="w-4 h-4 text-blue-600" />
+                      <span className="font-medium text-blue-700">清洁中</span>
+                      <span className="badge bg-blue-100 text-blue-700">{data.inProgressTasks.length}</span>
+                    </div>
+                    {data.inProgressTasks.length === 0 ? (
+                      <p className="text-sm text-blue-500/70">暂无进行中任务</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {data.inProgressTasks.map((task) => (
+                          <div key={task.id} className="flex items-center justify-between px-2 py-1 bg-white rounded-md border border-blue-200">
+                            <span className="text-sm font-medium text-blue-800">{task.roomNumber}</span>
+                            <span className="text-xs text-blue-600">{task.assigneeName}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-green-50 rounded-xl border border-green-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <span className="font-medium text-green-700">已完成</span>
+                      <span className="badge bg-green-100 text-green-700">{data.completedTasks.length}</span>
+                    </div>
+                    {data.completedTasks.length === 0 ? (
+                      <p className="text-sm text-green-500/70">暂无已完成任务</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {data.completedTasks.slice(0, 3).map((task) => (
+                          <div key={task.id} className="flex items-center justify-between px-2 py-1 bg-white rounded-md border border-green-200">
+                            <span className="text-sm font-medium text-green-800">{task.roomNumber}</span>
+                            <span className="text-xs text-green-600">{task.assigneeName}</span>
+                          </div>
+                        ))}
+                        {data.completedTasks.length > 3 && (
+                          <p className="text-xs text-green-600 text-center pt-1">还有 {data.completedTasks.length - 3} 间...</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <CompleteModal
         task={modalTask}
         isOpen={isModalOpen}
         onClose={closeCompleteModal}
+      />
+
+      <ScheduleAssignModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        checkoutRooms={checkoutRooms}
+        cleaners={cleaners}
       />
     </Layout>
   );

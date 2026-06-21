@@ -8,6 +8,11 @@ router.get('/', (_req: Request, res: Response) => {
   res.json({ success: true, data: items });
 });
 
+router.get('/combos', (_req: Request, res: Response) => {
+  const combos = dataStore.getInventoryCombos();
+  res.json({ success: true, data: combos });
+});
+
 router.get('/logs', (_req: Request, res: Response) => {
   const logs = dataStore.getInventoryLogs();
   res.json({ success: true, data: logs });
@@ -35,6 +40,18 @@ router.post('/:id/consume', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, message: '物资不存在或库存不足' });
   }
   res.json({ success: true, data: item });
+});
+
+router.post('/combos/:comboId/consume', (req: Request, res: Response) => {
+  const { roomNumber, operatorName } = req.body;
+  if (!roomNumber || !operatorName) {
+    return res.status(400).json({ success: false, message: '参数缺失' });
+  }
+  const result = dataStore.consumeComboInventory(req.params.comboId, roomNumber, operatorName);
+  if (!result.success) {
+    return res.status(400).json({ success: false, message: result.message });
+  }
+  res.json({ success: true, data: result });
 });
 
 export default router;

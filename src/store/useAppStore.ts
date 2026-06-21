@@ -5,24 +5,30 @@ import type {
   MaintenanceOrder,
   InventoryItem,
   InventoryLog,
+  InventoryCombo,
   Staff,
   Statistics,
   RoomStatus,
   CleaningStatus,
   MaintenanceStatus,
+  MaintenanceActionType,
+  DateRangeType,
 } from '../../shared/types';
 import { api } from '../lib/api';
 
 interface AppState {
   rooms: Room[];
+  checkoutRooms: Room[];
   cleaningTasks: CleaningTask[];
   maintenanceOrders: MaintenanceOrder[];
   inventory: InventoryItem[];
+  inventoryCombos: InventoryCombo[];
   inventoryLogs: InventoryLog[];
   staff: Staff[];
   cleaners: Staff[];
   repairStaff: Staff[];
   statistics: Statistics | null;
+  statisticsDateRange: DateRangeType;
   loading: boolean;
   error: string | null;
 
@@ -35,11 +41,14 @@ interface AppState {
   setRoomFilterStatus: (status: RoomStatus | 'all') => void;
   setCleaningFilterStatus: (status: CleaningStatus | 'all') => void;
   setMaintenanceFilterStatus: (status: MaintenanceStatus | 'all') => void;
+  setStatisticsDateRange: (range: DateRangeType) => void;
 
   fetchRooms: () => Promise<void>;
+  fetchCheckoutRooms: () => Promise<void>;
   fetchCleaningTasks: () => Promise<void>;
   fetchMaintenanceOrders: () => Promise<void>;
   fetchInventory: () => Promise<void>;
+  fetchInventoryCombos: () => Promise<void>;
   fetchInventoryLogs: () => Promise<void>;
   fetchStaff: () => Promise<void>;
   fetchStatistics: () => Promise<void>;
@@ -47,27 +56,33 @@ interface AppState {
 
   updateRoomStatus: (id: string, status: RoomStatus) => Promise<void>;
   createCleaningTask: (data: Record<string, unknown>) => Promise<void>;
+  batchAssignCleaningTasks: (roomIds: string[], assigneeId: string, assigneeName: string) => Promise<void>;
   startCleaningTask: (id: string) => Promise<void>;
   completeCleaningTask: (id: string, data: Record<string, unknown>) => Promise<void>;
   reworkCleaningTask: (id: string) => Promise<void>;
   updateCleaningTask: (id: string, data: Record<string, unknown>) => Promise<void>;
   createMaintenanceOrder: (data: Record<string, unknown>) => Promise<void>;
   updateMaintenanceOrder: (id: string, data: Record<string, unknown>) => Promise<void>;
+  addMaintenanceTimeline: (id: string, action: MaintenanceActionType, operatorName: string, operatorId?: string, note?: string) => Promise<void>;
   completeMaintenanceOrder: (id: string, data: Record<string, unknown>) => Promise<void>;
   restockInventory: (id: string, data: Record<string, unknown>) => Promise<void>;
   consumeInventory: (id: string, data: Record<string, unknown>) => Promise<boolean>;
+  consumeComboInventory: (comboId: string, roomNumber: string, operatorName: string) => Promise<boolean>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   rooms: [],
+  checkoutRooms: [],
   cleaningTasks: [],
   maintenanceOrders: [],
   inventory: [],
+  inventoryCombos: [],
   inventoryLogs: [],
   staff: [],
   cleaners: [],
   repairStaff: [],
   statistics: null,
+  statisticsDateRange: 'all',
   loading: false,
   error: null,
 
@@ -80,6 +95,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRoomFilterStatus: (status) => set({ roomFilterStatus: status }),
   setCleaningFilterStatus: (status) => set({ cleaningFilterStatus: status }),
   setMaintenanceFilterStatus: (status) => set({ maintenanceFilterStatus: status }),
+  setStatisticsDateRange: (range) => set({ statisticsDateRange: range }),
 
   fetchRooms: async () => {
     const { roomFilterFloor, roomFilterStatus } = get();
@@ -89,6 +105,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       const status = roomFilterStatus === 'all' ? undefined : roomFilterStatus;
       const rooms = await api.getRooms(floor, status);
       set({ rooms: rooms as Room[] });
+    } catch (err) {
+      set({ error: (err as Error).message });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchCheckoutRooms: async () => {
+    set({ loading: true, error: null });
+    try {
+      const rooms = await api.getCheckoutRooms();
+      set({ checkoutRooms: rooms as Room[] });
     } catch (err) {
       set({ error: (err as Error).message });
     } finally {
@@ -136,6 +164,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchInventoryCombos: async () => {
+    set({ loading: true, error: null });
+    try {
+      const combos = await api.getInventoryCombos();
+      set({ inventoryCombos: combos as InventoryCombo[] });
+    } catch (err) {
+      set({ error: (err as Error).message });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
   fetchInventoryLogs: async () => {
     set({ loading: true, error: null });
     try {
@@ -169,9 +209,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fetchStatistics: async () => {
+    const { statisticsDateRange } = get();
     set({ loading: true, error: null });
     try {
-      const stats = await api.getStatistics();
+      const stats = await api.getStatistics(statisticsDateRange);
       set({ statistics: stats as Statistics });
     } catch (err) {
       set({ error: (err as Error).message });
@@ -186,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchCleaningTasks(),
       get().fetchMaintenanceOrders(),
       get().fetchInventory(),
+      get().fetchInventoryCombos(),
       get().fetchInventoryLogs(),
       get().fetchStaff(),
     ]);
@@ -193,12 +235,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateRoomStatus: async (id, status) => {
     await api.updateRoomStatus(id, status);
-    await get().fetchRooms();
+    await Promise.all([get().fetchRooms(), get().fetchCheckoutRooms()]);
   },
 
   createCleaningTask: async (data) => {
     await api.createCleaningTask(data);
-    await get().fetchCleaningTasks();
+    await Promise.all([get().fetchCleaningTasks(), get().fetchRooms()]);
+  },
+
+  batchAssignCleaningTasks: async (roomIds, assigneeId, assigneeName) => {
+    await api.batchAssignCleaningTasks({ roomIds, assigneeId, assigneeName });
+    await Promise.all([get().fetchCleaningTasks(), get().fetchRooms(), get().fetchCheckoutRooms()]);
   },
 
   startCleaningTask: async (id) => {
@@ -256,6 +303,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().fetchMaintenanceOrders();
   },
 
+  addMaintenanceTimeline: async (id, action, operatorName, operatorId, note) => {
+    await api.addMaintenanceTimeline(id, { action, operatorName, operatorId, note });
+    await get().fetchMaintenanceOrders();
+  },
+
   completeMaintenanceOrder: async (id, data) => {
     await api.completeMaintenanceOrder(id, data);
     await Promise.all([get().fetchMaintenanceOrders(), get().fetchStatistics()]);
@@ -273,6 +325,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     try {
       await api.consumeInventory(id, data);
+      await Promise.all([get().fetchInventory(), get().fetchInventoryLogs()]);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  consumeComboInventory: async (comboId, roomNumber, operatorName) => {
+    try {
+      await api.consumeComboInventory(comboId, { roomNumber, operatorName });
       await Promise.all([get().fetchInventory(), get().fetchInventoryLogs()]);
       return true;
     } catch {

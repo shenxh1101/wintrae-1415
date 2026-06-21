@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { dataStore } from '../data/store';
+import type { DateRangeType } from '../../shared/types';
 
 const router = Router();
 
-router.get('/statistics', (_req: Request, res: Response) => {
-  const stats = dataStore.getStatistics();
+router.get('/statistics', (req: Request, res: Response) => {
+  const dateRange = (req.query.dateRange as DateRangeType) || 'all';
+  const stats = dataStore.getStatistics(dateRange);
   res.json({ success: true, data: stats });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAppStore } from '../store/useAppStore';
-import type { Statistics as StatisticsType } from '../../shared/types';
+import type { Statistics as StatisticsType, DateRangeType } from '../../shared/types';
 import {
   BarChart3,
   Clock,
@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Users,
   PieChart,
+  Calendar,
 } from 'lucide-react';
 import {
   BarChart,
@@ -30,6 +31,12 @@ import {
 import { cn } from '../lib/utils';
 
 const COLORS = ['#1e3a5f', '#c8993e', '#5279aa', '#dab75b', '#a9bcd4', '#e6cf92'];
+
+const dateRangeOptions: { value: DateRangeType; label: string; icon: typeof Calendar }[] = [
+  { value: 'today', label: '今天', icon: Calendar },
+  { value: 'week', label: '本周', icon: Calendar },
+  { value: 'month', label: '本月', icon: Calendar },
+];
 
 interface StatCardProps {
   title: string;
@@ -91,10 +98,16 @@ export default function StatisticsPage() {
   const statistics = useAppStore((s) => s.statistics);
   const fetchStatistics = useAppStore((s) => s.fetchStatistics);
   const loading = useAppStore((s) => s.loading);
+  const statisticsDateRange = useAppStore((s) => s.statisticsDateRange);
+  const setStatisticsDateRange = useAppStore((s) => s.setStatisticsDateRange);
 
   useEffect(() => {
     fetchStatistics();
-  }, [fetchStatistics]);
+  }, [fetchStatistics, statisticsDateRange]);
+
+  const handleDateRangeChange = (range: DateRangeType) => {
+    setStatisticsDateRange(range);
+  };
 
   if (loading && !statistics) {
     return (
@@ -120,9 +133,34 @@ export default function StatisticsPage() {
 
   return (
     <Layout title="统计分析" subtitle="运营数据概览与趋势分析">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600 flex items-center gap-1">
+            <Calendar className="w-4 h-4" />
+            时间范围:
+          </span>
+          {dateRangeOptions.map((option) => {
+            const OptionIcon = option.icon;
+            const isActive = statisticsDateRange === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => handleDateRangeChange(option.value)}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  isActive
+                    ? 'bg-primary-500 text-white shadow-sm'
+                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                )}
+              >
+                <OptionIcon className="w-4 h-4" />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
         <button
-          onClick={fetchStatistics}
+          onClick={() => fetchStatistics()}
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
             'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',

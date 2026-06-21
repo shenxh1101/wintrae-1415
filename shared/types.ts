@@ -42,6 +42,17 @@ export interface CleaningTask {
 
 export type MaintenanceStatus = 'pending' | 'inProgress' | 'completed' | 'cancelled';
 export type MaintenancePriority = 'low' | 'medium' | 'high' | 'urgent';
+export type MaintenanceActionType = 'created' | 'assigned' | 'started' | 'note' | 'completed' | 'cancelled';
+
+export interface MaintenanceTimeline {
+  id: string;
+  orderId: string;
+  action: MaintenanceActionType;
+  operatorName: string;
+  operatorId?: string;
+  note?: string;
+  createdAt: string;
+}
 
 export interface MaintenanceOrder {
   id: string;
@@ -60,6 +71,7 @@ export interface MaintenanceOrder {
   completedAt?: string;
   result?: string;
   repairDurationMinutes?: number;
+  timeline: MaintenanceTimeline[];
 }
 
 export type InventoryCategory = 'toiletries' | 'footwear' | 'tissue' | 'water';
@@ -86,6 +98,13 @@ export interface InventoryLog {
   createdAt: string;
 }
 
+export interface InventoryCombo {
+  id: string;
+  name: string;
+  description: string;
+  items: { itemId: string; itemName: string; quantity: number }[];
+}
+
 export interface Staff {
   id: string;
   name: string;
@@ -93,6 +112,8 @@ export interface Staff {
   avatar?: string;
   floor?: number;
 }
+
+export type DateRangeType = 'today' | 'week' | 'month' | 'all';
 
 export interface Statistics {
   avgCleaningTurnaroundMinutes: number;
@@ -105,6 +126,7 @@ export interface Statistics {
   cleaningByPerson: { name: string; count: number; avgMinutes: number }[];
   repairsByType: { type: string; count: number }[];
   monthlyTrend: { month: string; cleaningCount: number; repairCount: number }[];
+  dateRange?: DateRangeType;
 }
 
 export interface ApiResponse<T> {

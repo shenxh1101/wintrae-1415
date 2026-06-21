@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { useAppStore } from '../store/useAppStore';
-import type { InventoryItem, InventoryLog, InventoryCategory, Room } from '../../shared/types';
+import type { InventoryItem, InventoryLog, InventoryCategory, Room, InventoryCombo } from '../../shared/types';
 import {
   Package,
   AlertTriangle,
@@ -13,6 +13,10 @@ import {
   Droplets,
   Footprints,
   FileText,
+  X,
+  ShoppingBag,
+  Check,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -27,6 +31,11 @@ interface ModalState {
   open: boolean;
   type: 'restock' | 'consume';
   item: InventoryItem | null;
+}
+
+interface ComboModalState {
+  open: boolean;
+  combo: InventoryCombo | null;
 }
 
 function InventoryCard({ item, onRestock, onConsume }: { item: InventoryItem; onRestock: (item: InventoryItem) => void; onConsume: (item: InventoryItem) => void }) {
@@ -113,6 +122,74 @@ function InventoryCard({ item, onRestock, onConsume }: { item: InventoryItem; on
           领用
         </button>
       </div>
+    </div>
+  );
+}
+
+function ComboCard({ combo, inventory, onConsume }: { combo: InventoryCombo; inventory: InventoryItem[]; onConsume: (combo: InventoryCombo) => void }) {
+  const hasInsufficientStock = useMemo(() => {
+    return combo.items.some((comboItem) => {
+      const inv = inventory.find((i) => i.id === comboItem.itemId);
+      return !inv || inv.totalQuantity < comboItem.quantity;
+    });
+  }, [combo, inventory]);
+
+  return (
+    <div className={cn('card p-5 relative overflow-hidden transition-all duration-300 hover:-translate-y-1', hasInsufficientStock && 'opacity-75')}>
+      <div className="absolute top-3 right-3">
+        <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', hasInsufficientStock ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50')}>
+          {hasInsufficientStock ? '库存不足' : '可领用'}
+        </span>
+      </div>
+
+      <div className="flex items-start gap-3 mb-4">
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-primary-50 to-accent-50">
+          <Sparkles className="w-6 h-6 text-primary-600" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold text-gray-900">{combo.name}</h3>
+          <span className="text-xs text-gray-500">{combo.description}</span>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="text-xs text-gray-500 mb-2">包含物资：</p>
+        <div className="space-y-1.5">
+          {combo.items.map((comboItem) => {
+            const inv = inventory.find((i) => i.id === comboItem.itemId);
+            const itemHasStock = inv && inv.totalQuantity >= comboItem.quantity;
+            return (
+              <div key={comboItem.itemId} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-1.5">
+                  {itemHasStock ? (
+                    <Check className="w-3.5 h-3.5 text-green-500" />
+                  ) : (
+                    <X className="w-3.5 h-3.5 text-red-500" />
+                  )}
+                  <span className="text-gray-700">{comboItem.itemName}</span>
+                </div>
+                <span className={cn('font-medium', itemHasStock ? 'text-gray-900' : 'text-red-600')}>
+                  × {comboItem.quantity}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <button
+        onClick={() => onConsume(combo)}
+        disabled={hasInsufficientStock}
+        className={cn(
+          'w-full flex items-center justify-center gap-1.5 text-sm py-2 rounded-lg font-medium transition-colors',
+          hasInsufficientStock
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'bg-gradient-to-r from-primary-500 to-accent-500 text-white hover:from-primary-600 hover:to-accent-600'
+        )}
+      >
+        <ShoppingBag className="w-4 h-4" />
+        一键领用
+      </button>
     </div>
   );
 }
@@ -272,6 +349,132 @@ function OperationModal({
   );
 }
 
+function ComboConsumeModal({
+  modal,
+  rooms,
+  inventory,
+  onClose,
+  onSubmit,
+  errorMessage,
+}: {
+  modal: ComboModalState;
+  rooms: Room[];
+  inventory: InventoryItem[];
+  onClose: () => void;
+  onSubmit: (data: { roomNumber: string; notes?: string }) => void;
+  errorMessage?: string;
+}) {
+  const [roomNumber, setRoomNumber] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+
+  useEffect(() => {
+    if (modal.open) {
+      setRoomNumber('');
+      setNotes('');
+    }
+  }, [modal.open]);
+
+  if (!modal.open || !modal.combo) return null;
+
+  const combo = modal.combo;
+
+  const handleSubmit = () => {
+    if (!roomNumber) return;
+    const data: { roomNumber: string; notes?: string } = { roomNumber };
+    if (notes) {
+      data.notes = notes;
+    }
+    onSubmit(data);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 flex items-center gap-3 bg-gradient-to-r from-primary-50 to-accent-50">
+          <ShoppingBag className="w-6 h-6 text-primary-600" />
+          <div>
+            <h3 className="font-semibold text-gray-900">领用组合包 - {combo.name}</h3>
+            <p className="text-sm text-gray-500">{combo.description}</p>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600 font-medium">{errorMessage}</p>
+            </div>
+          )}
+
+          <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+            <p className="text-sm font-medium text-gray-700 mb-2">将扣减以下物资：</p>
+            <div className="grid grid-cols-2 gap-2">
+              {combo.items.map((comboItem) => {
+                const inv = inventory.find((i) => i.id === comboItem.itemId);
+                const hasStock = inv && inv.totalQuantity >= comboItem.quantity;
+                return (
+                  <div key={comboItem.itemId} className="flex items-center justify-between text-sm bg-white px-3 py-2 rounded">
+                    <span className="text-gray-700">{comboItem.itemName}</span>
+                    <span className={cn('font-medium', hasStock ? 'text-gray-900' : 'text-red-600')}>
+                      -{comboItem.quantity} {inv?.unit || ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="label">房号 <span className="text-red-500">*</span></label>
+            <select
+              value={roomNumber}
+              onChange={(e) => setRoomNumber(e.target.value)}
+              className="input"
+              required
+            >
+              <option value="">请选择房号</option>
+              {rooms.map((room) => (
+                <option key={room.number} value={room.number}>
+                  {room.number} - {room.type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">备注</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="请输入备注信息（可选）"
+              rows={2}
+              className="input resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+          <button onClick={onClose} className="btn-outline">
+            取消
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!roomNumber}
+            className={cn(
+              'btn-primary',
+              !roomNumber && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            确认领用
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LogsTable({ logs }: { logs: InventoryLog[] }) {
   if (logs.length === 0) {
     return (
@@ -336,24 +539,30 @@ function LogsTable({ logs }: { logs: InventoryLog[] }) {
 export default function Inventory() {
   const inventory = useAppStore((s) => s.inventory);
   const inventoryLogs = useAppStore((s) => s.inventoryLogs);
+  const inventoryCombos = useAppStore((s) => s.inventoryCombos);
   const fetchInventory = useAppStore((s) => s.fetchInventory);
   const fetchInventoryLogs = useAppStore((s) => s.fetchInventoryLogs);
+  const fetchInventoryCombos = useAppStore((s) => s.fetchInventoryCombos);
   const restockInventory = useAppStore((s) => s.restockInventory);
   const consumeInventory = useAppStore((s) => s.consumeInventory);
+  const consumeComboInventory = useAppStore((s) => s.consumeComboInventory);
   const rooms = useAppStore((s) => s.rooms);
   const fetchRooms = useAppStore((s) => s.fetchRooms);
   const fetchStaff = useAppStore((s) => s.fetchStaff);
 
   const [modal, setModal] = useState<ModalState>({ open: false, type: 'restock', item: null });
+  const [comboModal, setComboModal] = useState<ComboModalState>({ open: false, combo: null });
   const [activeCategory, setActiveCategory] = useState<InventoryCategory | 'all'>('all');
   const [modalError, setModalError] = useState<string>('');
+  const [comboModalError, setComboModalError] = useState<string>('');
 
   useEffect(() => {
     fetchInventory();
     fetchInventoryLogs();
+    fetchInventoryCombos();
     fetchRooms();
     fetchStaff();
-  }, [fetchInventory, fetchInventoryLogs, fetchRooms, fetchStaff]);
+  }, [fetchInventory, fetchInventoryLogs, fetchInventoryCombos, fetchRooms, fetchStaff]);
 
   const filteredInventory = useMemo(() => {
     if (activeCategory === 'all') return inventory;
@@ -367,13 +576,13 @@ export default function Inventory() {
   const stats = useMemo(() => {
     const totalItems = inventory.reduce((sum, item) => sum + item.totalQuantity, 0);
     const lowStockCount = inventory.filter((item) => item.totalQuantity <= item.warningThreshold).length;
-    const todayIn = inventoryLogs
+    const totalIn = inventoryLogs
       .filter((log) => log.type === 'in')
       .reduce((sum, log) => sum + log.quantity, 0);
-    const todayOut = inventoryLogs
+    const totalOut = inventoryLogs
       .filter((log) => log.type === 'out')
       .reduce((sum, log) => sum + log.quantity, 0);
-    return { totalItems, lowStockCount, todayIn, todayOut };
+    return { totalItems, lowStockCount, totalIn, totalOut };
   }, [inventory, inventoryLogs]);
 
   const handleRestock = (item: InventoryItem) => {
@@ -386,9 +595,19 @@ export default function Inventory() {
     setModal({ open: true, type: 'consume', item });
   };
 
+  const handleComboConsume = (combo: InventoryCombo) => {
+    setComboModalError('');
+    setComboModal({ open: true, combo });
+  };
+
   const handleCloseModal = () => {
     setModalError('');
     setModal({ open: false, type: 'restock', item: null });
+  };
+
+  const handleCloseComboModal = () => {
+    setComboModalError('');
+    setComboModal({ open: false, combo: null });
   };
 
   const handleSubmit = async (data: { quantity: number; roomNumber?: string; notes?: string }) => {
@@ -404,6 +623,17 @@ export default function Inventory() {
       } else {
         setModalError(`库存不足！当前库存 ${modal.item.totalQuantity} ${modal.item.unit}，无法领用 ${data.quantity} ${modal.item.unit}`);
       }
+    }
+  };
+
+  const handleComboSubmit = async (data: { roomNumber: string; notes?: string }) => {
+    if (!comboModal.combo) return;
+    const operatorName = '王芳（前台）';
+    const success = await consumeComboInventory(comboModal.combo.id, data.roomNumber, operatorName);
+    if (success) {
+      handleCloseComboModal();
+    } else {
+      setComboModalError('组合包领用失败，请检查物资库存是否充足');
     }
   };
 
@@ -435,7 +665,7 @@ export default function Inventory() {
             <ArrowUpCircle className="w-6 h-6 text-green-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold text-gray-900">{stats.todayIn}</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.totalIn}</p>
             <p className="text-sm text-gray-500">累计入库</p>
           </div>
         </div>
@@ -445,11 +675,32 @@ export default function Inventory() {
             <ArrowDownCircle className="w-6 h-6 text-amber-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold text-gray-900">{stats.todayOut}</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.totalOut}</p>
             <p className="text-sm text-gray-500">累计出库</p>
           </div>
         </div>
       </div>
+
+      {inventoryCombos.length > 0 && (
+        <div className="mb-10">
+          <h2 className="font-serif text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="w-1 h-5 bg-gradient-to-b from-primary-400 to-accent-400 rounded" />
+            <Sparkles className="w-5 h-5 text-primary-500" />
+            常用组合包
+            <span className="text-sm font-normal text-gray-500">一键领用多种物资</span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {inventoryCombos.map((combo) => (
+              <ComboCard
+                key={combo.id}
+                combo={combo}
+                inventory={inventory}
+                onConsume={handleComboConsume}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 flex items-center gap-2">
         <button
@@ -518,6 +769,15 @@ export default function Inventory() {
         onClose={handleCloseModal}
         onSubmit={handleSubmit}
         errorMessage={modalError}
+      />
+
+      <ComboConsumeModal
+        modal={comboModal}
+        rooms={rooms}
+        inventory={inventory}
+        onClose={handleCloseComboModal}
+        onSubmit={handleComboSubmit}
+        errorMessage={comboModalError}
       />
     </Layout>
   );

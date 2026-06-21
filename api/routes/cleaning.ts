@@ -11,6 +11,11 @@ router.get('/', (req: Request, res: Response) => {
   res.json({ success: true, data: tasks });
 });
 
+router.get('/checkout-rooms', (_req: Request, res: Response) => {
+  const rooms = dataStore.getCheckoutRooms();
+  res.json({ success: true, data: rooms });
+});
+
 router.post('/', (req: Request, res: Response) => {
   const { roomId, roomNumber, floor, assigneeId, assigneeName } = req.body;
   if (!roomId || !roomNumber || !floor || !assigneeId || !assigneeName) {
@@ -20,6 +25,15 @@ router.post('/', (req: Request, res: Response) => {
     roomId, roomNumber, floor, assigneeId, assigneeName, status: 'pending',
   });
   res.json({ success: true, data: task });
+});
+
+router.post('/batch-assign', (req: Request, res: Response) => {
+  const { roomIds, assigneeId, assigneeName } = req.body;
+  if (!roomIds || !Array.isArray(roomIds) || roomIds.length === 0 || !assigneeId || !assigneeName) {
+    return res.status(400).json({ success: false, message: '参数缺失' });
+  }
+  const tasks = dataStore.batchAssignCleaningTasks(roomIds, assigneeId, assigneeName);
+  res.json({ success: true, data: tasks });
 });
 
 router.put('/:id', (req: Request, res: Response) => {
